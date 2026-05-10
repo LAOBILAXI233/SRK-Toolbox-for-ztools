@@ -31,7 +31,7 @@ module.exports = function (grunt) {
         "Creates a production-ready build. Use the --msg flag to add a compile message.",
         [
             "eslint", "clean:prod", "clean:config", "exec:generateConfig", "findModules", "webpack:web",
-            "copy:standalone", "zip:standalone", "clean:standalone", "exec:calcDownloadHash", "chmod"
+            "copy:ztoolsPlugin", "zip:ztoolsPlugin", "copy:standalone", "zip:standalone", "clean:standalone", "exec:calcDownloadHash", "chmod"
         ]);
 
     grunt.registerTask("node",
@@ -240,6 +240,18 @@ module.exports = function (grunt) {
             }
         },
         zip: {
+            ztoolsPlugin: {
+                cwd: "build/prod/",
+                src: [
+                    "build/prod/**/*",
+                    "!build/prod/SRK_Toolbox_v*.html",
+                    "!build/prod/SRK_Toolbox_v*.zip",
+                    "!build/prod/BundleAnalyzerReport.html",
+                    "!build/prod/sha256digest.txt"
+                ],
+                dest: `build/prod/SRK_Toolbox_ztools_v${pkg.version}.zip`,
+                compression: "DEFLATE"
+            },
             standalone: {
                 cwd: "build/prod/",
                 src: [
@@ -292,7 +304,7 @@ module.exports = function (grunt) {
                     process: function (content, srcpath) {
                         if (srcpath.indexOf("index.html") >= 0) {
                             // Replace download link with version number
-                            content = content.replace(/<a [^>]+>.+下载离线版SRK Toolbox.+?<\/a>/,
+                            content = content.replace(/<a [^>]+>.+SRK Toolbox X Ztools.+?<\/a>/,
                                 `<span>版本 ${pkg.version}</span>`);
 
                             return grunt.template.process(content, srcpath);
@@ -306,6 +318,18 @@ module.exports = function (grunt) {
                     {
                         src: ["build/prod/index.html"],
                         dest: `build/prod/SRK_Toolbox_v${pkg.version}.html`
+                    }
+                ]
+            },
+            ztoolsPlugin: {
+                files: [
+                    {
+                        src: ["public/plugin.json"],
+                        dest: "build/prod/plugin.json"
+                    },
+                    {
+                        src: ["public/logo.png"],
+                        dest: "build/prod/logo.png"
                     }
                 ]
             }
@@ -339,6 +363,8 @@ module.exports = function (grunt) {
                                 `shasum -a 256 build/prod/SRK_Toolbox_v${pkg.version}.zip | awk '{print $1;}' > build/prod/sha256digest.txt`,
                                 `sed -i '' -e "s/DOWNLOAD_HASH_PLACEHOLDER/$(cat build/prod/sha256digest.txt)/" build/prod/index.html`
                             ]);
+                        case "win32":
+                            return `node -e "const crypto = require('crypto'); const fs = require('fs'); const zip = 'build/prod/SRK_Toolbox_v${pkg.version}.zip'; const html = 'build/prod/index.html'; const hash = crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex'); fs.writeFileSync('build/prod/sha256digest.txt', hash); fs.writeFileSync(html, fs.readFileSync(html, 'utf8').replace(/DOWNLOAD_HASH_PLACEHOLDER/g, hash));"`;
                         default:
                             return chainCommands([
                                 `sha256sum build/prod/SRK_Toolbox_v${pkg.version}.zip | awk '{print $1;}' > build/prod/sha256digest.txt`,
@@ -416,6 +442,8 @@ module.exports = function (grunt) {
             fixCryptoApiImports: {
                 command: function () {
                     switch (process.platform) {
+                        case "win32":
+                            return `node -e "const fs = require('fs'); const path = require('path'); const root = path.join('node_modules', 'crypto-api', 'src'); const walk = dir => { for (const entry of fs.readdirSync(dir, { withFileTypes: true })) { const file = path.join(dir, entry.name); if (entry.isDirectory()) { if (entry.name !== '.git') walk(file); } else { const source = fs.readFileSync(file, 'utf8'); const next = source.replace(/from \\x22(\\.[^\\x22]*?)(?<!\\.mjs)\\x22;/g, 'from \\x22$1.mjs\\x22;'); if (next !== source) fs.writeFileSync(file, next); } } }; walk(root);"`;
                         case "darwin":
                             return `find ./node_modules/crypto-api/src/ \\( -type d -name .git -prune \\) -o -type f -print0 | xargs -0 sed -i '' -e '/\\.mjs/!s/\\(from "\\.[^"]*\\)";/\\1.mjs";/g'`;
                         default:
@@ -429,6 +457,8 @@ module.exports = function (grunt) {
                     switch (process.platform) {
                         case "darwin":
                             return `sed -i '' 's/<div id=snackbar-container\\/>/<div id=snackbar-container>/g' ./node_modules/snackbarjs/src/snackbar.js`;
+                        case "win32":
+                            return `node -e "const fs = require('fs'); const file = 'node_modules/snackbarjs/src/snackbar.js'; const source = fs.readFileSync(file, 'utf8'); fs.writeFileSync(file, source.replace(/<div id=snackbar-container\\/>/g, '<div id=snackbar-container>'));"`;
                         default:
                             return `sed -i 's/<div id=snackbar-container\\/>/<div id=snackbar-container>/g' ./node_modules/snackbarjs/src/snackbar.js`;
                     }
